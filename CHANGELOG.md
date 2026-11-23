@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.1.0)
+## 0.1.0
 
 - Added an optional Jev client for boolean checks, `probability_threshold` to configure their cutoff (default `> 0.5`), and `await check.probability(statement)` for the model's probability.
 - Replacing a check's `llm` updates how it evaluates statements and whether it exposes `probability`.

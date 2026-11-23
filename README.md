@@ -49,7 +49,7 @@ try {
 }
 ```
 
-Once the first npm release is available, install VibeChecks with the SDK for your provider.
+Install VibeChecks with the SDK for your provider.
 
 ```sh
 # Google Gemini
