@@ -32,16 +32,16 @@ npm ci
 npm test
 ```
 
-Before the first VibeTools release, clone `vibe-engineers/vibetools-ts` alongside this repository and install its local tarball. These commands build the dependency and install it together with the VibeChecks development tools. [VibeTools repository](https://github.com/vibe-engineers/vibetools-ts)
+When working against an unpublished VibeTools change, clone `vibe-engineers/vibetools-ts` alongside this repository and install its local tarball. [VibeTools repository](https://github.com/vibe-engineers/vibetools-ts)
 
 ```sh
 npm ci --prefix ../vibetools-ts
 (cd ../vibetools-ts && npm pack)
-npm install --no-save ../vibetools-ts/vibe-engineers-vibetools-0.1.0.tgz
+npm install --no-save ../vibetools-ts/vibe-engineers-vibetools-0.1.1.tgz
 npm test
 ```
 
-For the first release, publish VibeTools before VibeChecks. The VibeChecks lockfile records the checksum of the candidate VibeTools archive. If the published archive differs, refresh its lockfile entry. Verify `npm ci`, `npm test`, and `npm run test:parity` against the published dependency before releasing VibeChecks.
+Publish the required VibeTools version before VibeChecks. Compare its npm `dist.integrity` with the VibeTools entry in `package-lock.json`. If the values differ, verify that the published archive's uncompressed tar matches `CORE_TAR_SHA256` in `.github/workflows/ci.yml` before recording the published integrity. Run `npm ci`, `npm test`, and `npm run test:parity` against the published dependency before releasing VibeChecks.
 
 ### Live examples
 
@@ -60,8 +60,8 @@ With both repositories set up as above, install their archives and your provider
 (cd ../vibetools-ts && npm pack)
 npm pack
 npm install --prefix /path/to/your-app \
-  "$PWD/../vibetools-ts/vibe-engineers-vibetools-0.1.0.tgz" \
-  "$PWD/vibe-engineers-vibechecks-0.1.0.tgz" \
+  "$PWD/../vibetools-ts/vibe-engineers-vibetools-0.1.1.tgz" \
+  "$PWD/vibe-engineers-vibechecks-0.1.1.tgz" \
   "openai@^7.62.0"
 ```
 
@@ -69,6 +69,7 @@ npm install --prefix /path/to/your-app \
 
 - _src/index.ts_ exports the public `VibeCheck` factory.
 - _src/vibecheck.ts_ validates the model and configuration, selects the shared client, and creates the callable.
+- _src/browser.ts_ creates checks for main-thread and worker WebLLM engines.
 - _src/config/config.ts_ defines `VibeCheckConfig` and its true-or-false instruction.
 - _src/utils/logger.ts_ configures the named `VibeChecks` console logger.
 - _tests/_ covers the public API, configuration, and integration with the shared tooling.
@@ -78,9 +79,15 @@ npm install --prefix /path/to/your-app \
 
 ### VibeCheck facade
 
-`VibeCheck(client, model, config?)` takes an OpenAI, Google Gemini, or TypeSafe SDK instance and a non-empty model name. The factory throws `RangeError` for a missing or blank model and `VibeLlmClientException` for an unsupported client. Await `check(statement)` when branching. It returns a promise, which is itself truthy.
+`VibeCheck(client, model, config?)` takes an OpenAI, Google Gemini, or TypeSafe SDK client on Node, or an initialized WebLLM engine in a browser, and a non-empty model name. The factory throws `RangeError` for a missing or blank model and `VibeLlmClientException` for an unsupported client. Await `check(statement)` when branching. It returns a promise, which is itself truthy.
 
-OpenAI and Gemini return a text verdict. With a `TypeSafeClient`, the check asks Jev one Noul question and returns `true` when the probability exceeds `probability_threshold`. A tie returns `false`. Use the Jev-only `await check.probability(statement)` to read the model's estimate from `0` to `1`. Each call evaluates the statement, so reuse the returned probability if you also need the verdict or a different cutoff. [TypeSafe Noul questions](https://docs.typesafe.ai/primitives/noul)
+Browser bundlers select the package's `browser` export using the same root import. Create the engine in client-side code on HTTPS or localhost. Pass the model ID loaded by `CreateMLCEngine` or `CreateWebWorkerMLCEngine`. Your app owns the download, progress reporting, and engine lifetime. [Browser example](../README.md#using-webllm-in-a-browser)
+
+In a browser-only TypeScript build, set `"customConditions": ["browser"]` with `"moduleResolution": "bundler"` to check calls against the same browser entry. Its `VibeCheckFunction` type exposes the local evaluator. [TypeScript custom conditions](https://www.typescriptlang.org/tsconfig/customConditions.html)
+
+Each local check starts a fresh conversation. With the stock instruction, it includes one true example and one false example before your statement. A custom instruction or `null` skips those examples. WebLLM constrains boolean replies to `True` or `False`. An interrupted or token-limited generation counts as a failed attempt, even when its text looks like a verdict. The timeout starts when you call the check. It stops further attempts for that call and allows generation already submitted to the shared engine to finish.
+
+OpenAI, Gemini, and WebLLM return a text verdict. With a `TypeSafeClient`, the check asks Jev one Noul question and returns `true` when the probability exceeds `probability_threshold`. A tie returns `false`. Use the Jev-only `await check.probability(statement)` to read the model's estimate from `0` to `1`. Each call evaluates the statement, so reuse the returned probability if you also need the verdict or a different cutoff. [TypeSafe Noul questions](https://docs.typesafe.ai/primitives/noul)
 
 If you replace `check.llm`, the next call uses that evaluator. Test `"probability" in check` to see whether the current evaluator supports Jev probabilities. A check with an explicit cutoff requires a Jev evaluator on each call.
 
@@ -88,7 +95,7 @@ Library authors can export an inferred check or import its type from `@vibe-engi
 
 TypeScript follows the Python source checkout's validation of model names and configuration types. The Python `vibechecks==1.0.2` wheel also accepted a blank model name and a base `VibeConfig` instance. Use a nonblank string and pass a `VibeCheckConfig` or plain options object in TypeScript.
 
-A non-string statement rejects the promise with `VibeInputTypeException` before the provider receives a request. OpenAI or Gemini replies such as `"False"` resolve to `false`. When all attempts fail, the check rejects with an `Error` whose `cause` is a `VibeResponseParseException` for an unreadable verdict or a `VibeLlmApiException` for a provider failure. A timeout rejects with `VibeTimeoutException` directly. Import these exception classes from `@vibe-engineers/vibetools`.
+A non-string statement rejects the promise with `VibeInputTypeException` before the provider receives a request. Text replies such as `"False"` resolve to `false`. When all attempts fail, the check rejects with an `Error` whose `cause` is a `VibeResponseParseException` for an unreadable verdict or a `VibeLlmApiException` for a provider failure. A timeout rejects with `VibeTimeoutException` directly. Import these exception classes from `@vibe-engineers/vibetools`.
 
 ### Configuration defaults
 
@@ -98,12 +105,12 @@ TypeScript catches a base `VibeConfig` passed directly to the factory. JavaScrip
 
 | Option               | Default                                                                   | What it controls                                                                                   |
 | -------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `system_instruction` | `Evaluate the statement below and respond with either 'True' or 'False'.` for OpenAI and Gemini | A custom instruction adds guidance to Jev's judgment. Pass `null` to clear the text instruction. |
+| `system_instruction` | `Evaluate the statement below and respond with either 'True' or 'False'.` for OpenAI, Gemini, and WebLLM | A custom instruction adds guidance to Jev's judgment. Pass `null` to clear the text instruction. |
 | `timeout`            | `10_000`                                                                  | Milliseconds for the whole evaluation, including retry delays.                                     |
 | `vibe_mode`          | `"chill"`                                                                 | `CHILL` allows one attempt, `EAGER` two, and `AGGRESSIVE` three, with one second between attempts. |
 | `probability_threshold` | `0.5` for Jev | A finite number from `0` through `1`. A check passes when the estimate exceeds this value. |
 
-Omitting `probability_threshold` or passing `null` or `undefined` uses the Jev default. For example, `{ probability_threshold: 0.8 }` makes a score of exactly `0.8` return `false`. A threshold of `1` makes every check return `false`. OpenAI and Gemini reject a numeric threshold because they supply a verdict directly.
+Omitting `probability_threshold` or passing `null` or `undefined` uses the Jev default. For example, `{ probability_threshold: 0.8 }` makes a score of exactly `0.8` return `false`. A threshold of `1` makes every check return `false`. A numeric threshold requires Jev.
 
 Mode strings are case-insensitive. An unknown mode string raises `RangeError`. Omit `vibe_mode` to use the default in both Python and TypeScript. An explicit `null` for this option raises `TypeError` in Node.
 
@@ -134,7 +141,7 @@ Use TypeScript annotations for public signatures and short JSDoc comments for be
 
 ## Testing
 
-Run `npm run lint` and `npm test`. The test command builds VibeChecks, type-checks its public API, and runs its Node tests. The VibeTools repository contains the lower-level provider transport tests. Use `npm pack --dry-run` to inspect the archive. [VibeTools tests](https://github.com/vibe-engineers/vibetools-ts/tree/main/tests)
+Run `npm run lint` and `npm test`. The test command builds VibeChecks, checks its Node and browser declarations, and runs the offline tests. A browser test loads the public factory under Node's `browser` export condition with Node built-ins blocked. The VibeTools repository contains the lower-level provider transport tests. Use `npm pack --dry-run` to inspect the archive. [VibeTools tests](https://github.com/vibe-engineers/vibetools-ts/tree/main/tests)
 
 To compare against Python, activate a Python environment and run the commands below. When using `VIBE_PYTHON` instead of activating the environment, install the requirements with that interpreter. The combined checkout uses the sibling Python sources when present.
 

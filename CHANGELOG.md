@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Added browser-based checks with an initialized WebLLM engine through the existing package import.
+
 ## 0.1.0
 
 - Added an optional Jev client for boolean checks, `probability_threshold` to configure their cutoff (default `> 0.5`), and `await check.probability(statement)` for the model's probability.

@@ -1,12 +1,18 @@
 import type { GoogleGenAI } from "@google/genai"
 import type { TypeSafeClient } from "@typesafe-ai/sdk"
-import { VibeCheck } from "@vibe-engineers/vibechecks"
+import {
+  type JevCheckFunction,
+  VibeCheck,
+  type VibeCheckFunction,
+} from "@vibe-engineers/vibechecks"
 import { VibeCheckConfig } from "@vibe-engineers/vibechecks/config/config"
 import { VibeConfig } from "@vibe-engineers/vibetools"
 import type {
+  DecisionClientResult,
   JevClient,
   SharedClient,
   VibeConfigOptions,
+  VibeLlmClient,
 } from "@vibe-engineers/vibetools/_internal"
 import type OpenAI from "openai"
 
@@ -53,6 +59,8 @@ jevCheck.llm = VibeCheck(jev, "another-model").llm
 expectType<Promise<number>>(jevCheck.probability("claim"))
 expectType<Promise<boolean>>(jevCheck("claim"))
 expectType<Promise<boolean>>(check.llm.vibe_eval("claim", Boolean))
+declare const decoratedOpenAI: OpenAI & { getGPUVendor(): Promise<string> }
+expectType<VibeLlmClient>(VibeCheck(decoratedOpenAI, "model").llm)
 declare const fromExistingWrapper: ReturnType<typeof VibeCheck>
 expectType<Promise<boolean>>(fromExistingWrapper.llm.vibe_eval("claim", Boolean))
 declare const mixed: TypeSafeClient | OpenAI
@@ -61,7 +69,9 @@ mixedCheck.llm = jevCheck.llm
 if ("probability" in mixedCheck) expectType<Promise<number>>(mixedCheck.probability("claim"))
 mixedCheck.llm = configured.llm
 expectType<Promise<boolean>>(mixedCheck("claim"))
-export function genericCheck<C extends JevClient | SharedClient>(client: C) {
+export function genericCheck<C extends JevClient | SharedClient>(
+  client: C,
+): DecisionClientResult<C, JevCheckFunction, VibeCheckFunction> {
   return VibeCheck(client, "model", legacyConfig)
 }
 function checkWithTimeout<C extends JevClient | SharedClient, T extends { timeout: number }>(

@@ -1,20 +1,20 @@
 import { VibeInputTypeException } from "@vibe-engineers/vibetools"
 import {
-  type DecisionClientResult,
   type JevClient,
   JevEvaluator,
   type SharedClient,
-  type VibeConfig,
-  type VibeConfigOptions,
   VibeLlmClient,
   isJevClient,
 } from "@vibe-engineers/vibetools/_internal"
-import { strip } from "@vibe-engineers/vibetools/_internal/text"
+import { usesLocalEngine } from "@vibe-engineers/vibetools/_internal/vibe_llm_client"
+import { type WebLlmEngine, WebLlmWrapper } from "@vibe-engineers/vibetools/llms/webllm_wrapper"
 import {
-  VibeCheckConfig,
-  type VibeCheckConfigOptions,
-  defaultCheckInstruction,
-} from "./config/config.js"
+  checkSettings,
+  type Config,
+  type GenerativeConfig,
+  type SpreadSettings,
+} from "./config/settings.js"
+import { type VibeCheckConfigOptions, defaultCheckInstruction } from "./config/config.js"
 import { console_logger } from "./utils/logger.js"
 
 /** A configured boolean check and its underlying evaluator. */
@@ -27,20 +27,18 @@ export interface JevCheckFunction extends VibeCheckFunction<JevEvaluator> {
   probability(statement: string): Promise<number>
 }
 
-type Client = JevClient | SharedClient
-type Evaluator = JevEvaluator | VibeLlmClient
+type HostedClient = JevClient | SharedClient
+type Client = HostedClient | WebLlmEngine
+type Evaluator = JevEvaluator | VibeLlmClient | WebLlmWrapper
 type MutableCheck = VibeCheckFunction<Evaluator> & Partial<Pick<JevCheckFunction, "probability">>
-type Config = VibeCheckConfig | VibeCheckConfigOptions | null
-type CheckResult<C extends Client> = DecisionClientResult<C, JevCheckFunction, VibeCheckFunction>
-// A specialized factory can receive all the shared fields spread from an initialized config.
-type SpreadSettings = Pick<VibeConfig, keyof VibeConfig> & VibeConfigOptions
-type GenerativeConfig<Options extends VibeCheckConfigOptions> =
-  | VibeCheckConfig
-  | (VibeConfigOptions & { probability_threshold?: null | undefined })
-  | (Options &
-      Record<Exclude<keyof Options, keyof VibeCheckConfigOptions>, never> &
-      (Options extends { probability_threshold: number } ? never : unknown))
-  | null
+// Checking the full hosted union preserves DecisionClientResult for generic callers.
+type CheckResult<C extends Client> = unknown extends C
+  ? VibeCheckFunction
+  : C extends JevClient
+    ? JevCheckFunction
+    : C extends HostedClient
+      ? VibeCheckFunction
+      : VibeCheckFunction<WebLlmWrapper>
 
 export interface VibeCheckFactory {
   <C extends Client>(client: C & JevClient, model: string, config?: Config): CheckResult<C>
@@ -59,14 +57,11 @@ export interface VibeCheckFactory {
 
 /** Create an asynchronous boolean check. Jev checks also expose the Noul probability. */
 export const VibeCheck = ((
-  client: SharedClient | JevClient,
+  client: SharedClient | JevClient | WebLlmEngine,
   model: string,
   config?: Config,
 ): MutableCheck => {
-  if (typeof model !== "string" || !strip(model)) {
-    throw new RangeError("model must be a non-empty string.")
-  }
-  const checkConfig = config instanceof VibeCheckConfig ? config : new VibeCheckConfig(config ?? {})
+  const checkConfig = checkSettings(model, config)
   const threshold = checkConfig.probability_threshold ?? null
   const jev = isJevClient(client)
   if (!jev && threshold !== null)
@@ -97,15 +92,25 @@ export const VibeCheck = ((
       else delete check.probability
     },
   })
-  check.llm = jev
-    ? new JevEvaluator(
-        client,
-        model,
-        checkConfig,
-        console_logger,
-        "Is the statement true?",
-        defaultCheckInstruction,
-      )
-    : new VibeLlmClient(client, model, checkConfig, console_logger)
+  if (jev) {
+    check.llm = new JevEvaluator(
+      client,
+      model,
+      checkConfig,
+      console_logger,
+      "Is the statement true?",
+      defaultCheckInstruction,
+    )
+  } else if (usesLocalEngine(client)) {
+    check.llm = new WebLlmWrapper(
+      client,
+      model,
+      checkConfig,
+      console_logger,
+      defaultCheckInstruction,
+    )
+  } else {
+    check.llm = new VibeLlmClient(client, model, checkConfig, console_logger)
+  }
   return check
 }) as VibeCheckFactory

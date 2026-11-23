@@ -4,6 +4,33 @@ import { TypeSafeClient } from "@typesafe-ai/sdk"
 import { VibeCheck } from "@vibe-engineers/vibechecks"
 import OpenAI from "openai"
 
+test("a local Node check follows replacements of its public evaluator", async () => {
+  const engine = {
+    getGPUVendor: async () => "offline",
+    chat: {
+      completions: { create: async () => ({ choices: [{ message: { content: "False" } }] }) },
+    },
+  }
+  const check = VibeCheck(engine, "model")
+  const local = check.llm
+  const jev = VibeCheck(new TypeSafeClient({ apiKey: "offline" }), "model").llm
+  jev.probability = async () => 0.8
+  check.llm = jev
+  assert.equal(await check("claim"), true)
+  assert.equal(await check.probability("claim"), 0.8)
+  check.llm = local
+  assert.equal("probability" in check, false)
+  assert.equal(await check("claim"), false)
+})
+
+test("an OpenAI SDK client with GPU metadata still uses the Responses API", async () => {
+  const client = new OpenAI({ apiKey: "offline" })
+  client.getGPUVendor = async () => "offline"
+  client.responses.create = async () => ({ output_text: "True" })
+  client.chat.completions.create = () => assert.fail("an OpenAI client was routed to WebLLM")
+  assert.equal(await VibeCheck(client, "model")("claim"), true)
+})
+
 test("a check follows its current evaluator when switching between OpenAI and Jev", async () => {
   const client = new OpenAI({ apiKey: "offline" })
   client.responses.create = async () => ({ output_text: "False" })

@@ -1,6 +1,9 @@
-import { VibeConfig, type VibeConfigOptions } from "@vibe-engineers/vibetools/_internal"
-import { validateProbabilityThreshold } from "@vibe-engineers/vibetools/_internal/jev_evaluator"
-import { isPlainObject } from "@vibe-engineers/vibetools/_internal/vibe_config"
+import {
+  VibeConfig,
+  type VibeConfigOptions,
+  isPlainObject,
+  validateProbabilityThreshold,
+} from "@vibe-engineers/vibetools/_internal/vibe_config"
 
 declare const checkConfigInstance: unique symbol
 export const defaultCheckInstruction =

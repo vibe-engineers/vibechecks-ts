@@ -15,6 +15,7 @@
 
 - [Introduction](#introduction)
 - [Using Jev](#using-jev)
+- [Using WebLLM in a browser](#using-webllm-in-a-browser)
 - [Features](#features)
 - [Technologies](#technologies)
 - [Team](#team)
@@ -23,7 +24,7 @@
 
 ### Introduction
 
-**VibeChecks** is a lightweight TypeScript package that lets you use natural language in an `if` statement or a loop. Give `VibeCheck` an OpenAI, Google Gemini, or TypeSafe client and a model name, then `await` each check to get its boolean result. This example asks for a dog breed and checks whether it is valid. Set `GEMINI_API_KEY` in your environment to run it.
+**VibeChecks** is a lightweight TypeScript package that lets you use natural language in an `if` statement or a loop. Give `VibeCheck` a provider client or browser engine and a model name, then `await` each check to get its boolean result. This example asks for a dog breed and checks whether it is valid. Set `GEMINI_API_KEY` in your environment to run it.
 
 ```ts
 import { stdin, stdout } from "node:process"
@@ -78,10 +79,30 @@ console.log(await check("A border collie is a herding dog."))
 
 To read the raw estimate, use `await check.probability(statement)`. If you need both the estimate and the verdict, compare that same value to your cutoff to evaluate the statement only once.
 
+### Using WebLLM in a browser
+
+Browser support starts with VibeChecks 0.1.1. Install the package and WebLLM in your browser app.
+
+```sh
+npm install "@vibe-engineers/vibechecks@^0.1.1" "@mlc-ai/web-llm@^0.2.89"
+```
+
+Run your app over HTTPS or localhost in a browser with WebGPU. WebLLM downloads the selected model on first use and runs checks locally. Initialize the engine once and reuse it. Check your model on known true and false statements from your use case. [WebLLM](https://github.com/mlc-ai/web-llm)
+
+```ts
+import { CreateMLCEngine } from "@mlc-ai/web-llm"
+import { VibeCheck } from "@vibe-engineers/vibechecks"
+
+const model = "Llama-3.2-1B-Instruct-q4f16_1-MLC"
+const engine = await CreateMLCEngine(model)
+const check = VibeCheck(engine, model)
+console.log(await check("A border collie is a dog."))
+```
+
 ### Features
 
 - **Natural language conditions.** Use `await vc(statement)` anywhere you need a boolean, including `if` and `while` conditions.
-- **Multi-provider support.** Pass an OpenAI, Google Gemini, or Jev client to the same `VibeCheck` factory.
+- **Multi-provider support.** Pass an OpenAI, Google Gemini, or Jev client on Node, or an initialized WebLLM engine in a browser.
 - **Extensible design.** VibeTools holds the provider adapters. VibeChecks lets you customize the system instruction, timeout, and retry mode.
 - **Custom exceptions.** Distinguish a timeout, invalid input, a provider failure, and a response that could not be parsed. [Error handling](docs/DeveloperGuide.md#vibecheck-facade)
 
@@ -92,7 +113,7 @@ To read the raw estimate, use `await check.probability(statement)`. If you need 
 <p align="center">
   <img height="150" width="150" src="https://www.typescriptlang.org/branding/ts-logo-128.svg" alt="TypeScript logo" />
 </p>
-<p align="center">TypeScript on Node.js 22.13 or later</p>
+<p align="center">TypeScript on Node.js 22.13 or later and WebGPU-capable browsers</p>
 
 ##### Project Repository
 
